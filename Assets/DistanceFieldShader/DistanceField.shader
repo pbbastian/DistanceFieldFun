@@ -1,10 +1,14 @@
 ﻿// Upgrade NOTE: replaced '_World2Object' with 'unity_WorldToObject'
 
+// Upgrade NOTE: replaced '_World2Object' with 'unity_WorldToObject'
+
 Shader "Unlit/DistanceField"
 {
 	Properties
 	{
-		_MainTex ("Texture", 2D) = "white" {}
+        _Color ("Color", Color) = (1,1,1,1)
+        _SpecularPower ("Specular power", Float) = 20
+        _Gloss ("Gloss", Float) = 1
 	}
 	SubShader
 	{
@@ -26,16 +30,15 @@ CGPROGRAM
 #pragma multi_compile_fog
 
 #include "UnityCG.cginc"
+#include "Lighting.cginc"
 
 struct appdata
 {
     float4 vertex : POSITION;
-    float2 uv : TEXCOORD0;
 };
 
 struct v2f
 {
-    float2 uv : TEXCOORD0;
     UNITY_FOG_COORDS(1)
     float4 vertex : SV_POSITION;
     float3 osDirection : TEXCOORD1;
@@ -44,12 +47,14 @@ struct v2f
 
 sampler2D _MainTex;
 float4 _MainTex_ST;
+fixed4 _Color;
+float _SpecularPower;
+float _Gloss;
 
 v2f vert (appdata v)
 {
     v2f o;
     o.vertex = mul(UNITY_MATRIX_MVP, v.vertex);
-    o.uv = TRANSFORM_TEX(v.uv, _MainTex);
     UNITY_TRANSFER_FOG(o,o.vertex);
 
     float3 osCameraPosition = mul(unity_WorldToObject, float4(_WorldSpaceCameraPos, 1.0)).xyz;
@@ -71,13 +76,23 @@ float sphere(float3 p, float3 o, float3 s)
     return length(o - p) - s;
 }
 
+float sdf_smin(float a, float b, float k = 32)
+{
+	float res = exp(-k*a) + exp(-k*b);
+	return -log(max(0.0001,res)) / k;
+}
+
 float world(float3 p)
 {
     //p.x = (abs(p.x) % 3) - 1.5;
     //return sphere(p, 0, 1);
-    return min(cube(p, 0, 0.3), sphere(p, 0.3, 0.2));
+    return sdf_smin(cube(p, 0, 0.3), sphere(p, 0.25, 0.15), 16);
     //return cube(p, 0, 1);
 }
+
+#define EPS 0.001
+#define NORMAL_EPS 0.000001
+#define ITERATIONS 50
 
 float3 computeSurfaceNormal(float3 p)
 {
@@ -86,37 +101,38 @@ float3 computeSurfaceNormal(float3 p)
 
     float d = world(p);
     return normalize(float3(
-        world(p+float3(eps, 0, 0)) - world(p-float3(eps, 0, 0)),
-        world(p+float3(0, eps, 0)) - world(p-float3(0, eps, 0)),
-        world(p+float3(0, 0, eps)) - world(p-float3(0, 0, eps))
+        world(p+float3(NORMAL_EPS, 0, 0)) - world(p-float3(NORMAL_EPS, 0, 0)),
+        world(p+float3(0, NORMAL_EPS, 0)) - world(p-float3(0, NORMAL_EPS, 0)),
+        world(p+float3(0, 0, NORMAL_EPS)) - world(p-float3(0, 0, NORMAL_EPS))
     ));
 }
 
 float3 shadeSurface(float3 p)
 {
-    float3 lightWS = float3(100 * _SinTime.w, 30 * _CosTime.w, 50 * _CosTime.w);
-    float3 light = normalize(lightWS - p);
+    float3 lightDirection = normalize(mul(unity_WorldToObject, float4(_WorldSpaceLightPos0.xyz, 0)).xyz);
+    float3 lightColor = _LightColor0.rgb;
     float3 normal = computeSurfaceNormal(p);
-    return dot(light, normal) * (normal * 0.5 + 0.5);
+
+    // Diffuse
+    float NdotL = dot(lightDirection, normal);
+
+    // Specular
+    float3 osCamera = mul(unity_WorldToObject, _WorldSpaceCameraPos);
+    float3 viewDirection = normalize(p - osCamera);
+    float3 halfVec = (lightDirection - viewDirection) / 2;
+    float specular = pow(dot(normal, halfVec), _SpecularPower) * _Gloss;
+
+    return NdotL * _Color.xyz * lightColor + specular;
 }
 
-float3 intersect(float3 p, float3 dir)
+fixed4 intersect(float3 p, float3 dir)
 {
-    float t = 0.0;
-    float eps = 0.01;
-    float finalEps = 0.1;
-    float steps = 50;
-    float epsStep = (finalEps - eps) / steps;
-    float nearest = 3.402823466e+38F;
-
-    for (int i = 0; i < steps; i++) {
-        float distance = world(p + dir*t);
-        if (distance < eps) {
-        return p + dir*t;
+    for (int i = 0; i < ITERATIONS; i++) {
+        float distance = world(p);
+        if (distance < EPS) {
+            return fixed4(shadeSurface(p), 1);
         }
-        nearest = min(nearest, distance);
-        eps += epsStep;
-        t += nearest;
+        p += distance * dir;
     }
 
     return 0;
@@ -124,19 +140,10 @@ float3 intersect(float3 p, float3 dir)
 
 fixed4 frag (v2f i) : SV_Target
 {
-    // sample the texture
-    fixed4 col = tex2D(_MainTex, i.uv);
-
     // apply fog
     UNITY_APPLY_FOG(i.fogCoord, col);
 
-    float3 surfacePosition = intersect(i.osPosition, normalize(i.osDirection));
-    if (length(surfacePosition) > 0) {
-        float3 pixelColor = shadeSurface(surfacePosition);
-        return fixed4(pixelColor, 1.0);
-    }
-
-    return fixed4(0, 0, 0, 0);
+    return intersect(i.osPosition, normalize(i.osDirection));
 }
 ENDCG
 		}
