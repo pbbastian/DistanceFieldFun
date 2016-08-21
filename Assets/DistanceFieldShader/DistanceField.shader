@@ -86,15 +86,17 @@ float world(float3 p)
 {
     //p.x = (abs(p.x) % 3) - 1.5;
     //return sphere(p, 0, 1);
-    return sdf_smin(cube(p, 0, 0.3), sphere(p, 0.25, 0.15), 16);
+    return min(cube(p, 0, 0.3), sphere(p, 0.3, 0.15));
     //return cube(p, 0, 1);
 }
 
 #define EPS 0.001
 #define NORMAL_EPS 0.000001
+#define AO_DISTANCE 0.1
+#define SHADOW_OFFSET 0.1
 #define ITERATIONS 50
 
-float3 computeSurfaceNormal(float3 p)
+float3 computeNormal(float3 p)
 {
     // const delta vectors for normal calculation
     const float eps = 0.01;
@@ -107,14 +109,26 @@ float3 computeSurfaceNormal(float3 p)
     ));
 }
 
+float marchShadow(float3 p, float3 lightDirection)
+{
+    p += SHADOW_OFFSET * lightDirection;
+    for (int i = 0; i < 10; i++) {
+        float distance = world(p);
+        if (distance < EPS) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
 float3 shadeSurface(float3 p)
 {
     float3 lightDirection = normalize(mul(unity_WorldToObject, float4(_WorldSpaceLightPos0.xyz, 0)).xyz);
     float3 lightColor = _LightColor0.rgb;
-    float3 normal = computeSurfaceNormal(p);
+    float3 normal = computeNormal(p);
 
     // Diffuse
-    float NdotL = dot(lightDirection, normal);
+    float NdotL = max(dot(lightDirection, normal), 0);
 
     // Specular
     float3 osCamera = mul(unity_WorldToObject, _WorldSpaceCameraPos);
@@ -122,7 +136,9 @@ float3 shadeSurface(float3 p)
     float3 halfVec = (lightDirection - viewDirection) / 2;
     float specular = pow(dot(normal, halfVec), _SpecularPower) * _Gloss;
 
-    return NdotL * _Color.xyz * lightColor + specular;
+    float shadow = marchShadow(p, lightDirection);
+
+    return shadow * (NdotL * _Color.xyz * lightColor + specular) + unity_AmbientSky;
 }
 
 fixed4 intersect(float3 p, float3 dir)
