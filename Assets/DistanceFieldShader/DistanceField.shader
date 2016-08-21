@@ -1,24 +1,63 @@
-﻿Shader "Hidden/DistanceFieldShader"
-{
-  Properties
-  {
-	  _MainTex ("Texture", 2D) = "white" {}
-  }
-  SubShader
-  {
-	  // No culling or depth
-	  Cull Off ZWrite Off ZTest Always
+﻿// Upgrade NOTE: replaced '_World2Object' with 'unity_WorldToObject'
 
-	  Pass
-	  {
+Shader "Unlit/DistanceField"
+{
+	Properties
+	{
+		_MainTex ("Texture", 2D) = "white" {}
+	}
+	SubShader
+	{
+		Tags
+        {
+            "Queue"="Transparent"
+            "RenderType"="Transparent"
+        }
+		LOD 100
+
+		Pass
+		{
+            Blend SrcAlpha OneMinusSrcAlpha
 CGPROGRAM
-#pragma vertex vert_img
+
+#pragma vertex vert
 #pragma fragment frag
+// make fog work
+#pragma multi_compile_fog
 
 #include "UnityCG.cginc"
 
+struct appdata
+{
+    float4 vertex : POSITION;
+    float2 uv : TEXCOORD0;
+};
+
+struct v2f
+{
+    float2 uv : TEXCOORD0;
+    UNITY_FOG_COORDS(1)
+    float4 vertex : SV_POSITION;
+    float3 osDirection : TEXCOORD1;
+    float3 osPosition : TEXCOORD2;
+};
+
 sampler2D _MainTex;
-uniform half4 _MainTex_TexelSize;
+float4 _MainTex_ST;
+
+v2f vert (appdata v)
+{
+    v2f o;
+    o.vertex = mul(UNITY_MATRIX_MVP, v.vertex);
+    o.uv = TRANSFORM_TEX(v.uv, _MainTex);
+    UNITY_TRANSFER_FOG(o,o.vertex);
+
+    float3 osCameraPosition = mul(unity_WorldToObject, float4(_WorldSpaceCameraPos, 1.0)).xyz;
+    o.osDirection = normalize(v.vertex - osCameraPosition);
+    o.osPosition = v.vertex;
+
+    return o;
+}
 
 float cube(float3 p, float3 o, float3 s)
 {
@@ -36,7 +75,7 @@ float world(float3 p)
 {
     //p.x = (abs(p.x) % 3) - 1.5;
     //return sphere(p, 0, 1);
-    return min(cube(p, 1, 1), sphere(p, 2, 0.7));
+    return min(cube(p, 0, 0.3), sphere(p, 0.3, 0.2));
     //return cube(p, 0, 1);
 }
 
@@ -66,7 +105,7 @@ float3 intersect(float3 p, float3 dir)
     float t = 0.0;
     float eps = 0.01;
     float finalEps = 0.1;
-    float steps = 20;
+    float steps = 50;
     float epsStep = (finalEps - eps) / steps;
     float nearest = 3.402823466e+38F;
 
@@ -83,45 +122,23 @@ float3 intersect(float3 p, float3 dir)
     return 0;
 }
 
-fixed4 frag (v2f_img i) : SV_Target
+fixed4 frag (v2f i) : SV_Target
 {
-	fixed4 col = tex2D(_MainTex, UnityStereoScreenSpaceUVAdjust(i.uv, _MainTex_ST));
+    // sample the texture
+    fixed4 col = tex2D(_MainTex, i.uv);
 
-    const float cameraDistance = 10.0;
-    const float3 cameraPosition = float3(cameraDistance * _SinTime.w, 2, cameraDistance * _CosTime.w);
-    const float3 cameraDirection = normalize(float3(-1.0 * _SinTime.w, -0.2, -1.0 * _CosTime.w));
-    const float3 cameraUp = float3(0.0, 1.0, 0.0);
+    // apply fog
+    UNITY_APPLY_FOG(i.fogCoord, col);
 
-    const float PI = 3.14159265359;
-    const float fov = 50.0;
-    const float fovx = PI * fov / 360.0;
-    float fovy = fovx * _ScreenParams.y / _ScreenParams.x;
-    float ulen = tan(fovx);
-    float vlen = tan(fovy);
-
-    float2 uv = i.uv;
-    #if UNITY_UV_STARTS_AT_TOP
-    if (_MainTex_TexelSize.y < 0) {
-        uv.y = 1 - uv.y;
-    }
-    #endif
-
-    float2 camUV = uv * 2 - 1;
-    float3 cameraRight = normalize(cross(cameraUp, cameraDirection));
-    float3 pixel = cameraPosition + cameraDirection + cameraRight*camUV.x*ulen + cameraUp*camUV.y*vlen;
-    float3 rayDirection = normalize(pixel - cameraPosition);
-
-    float3 surfacePosition = intersect(cameraPosition, rayDirection);
+    float3 surfacePosition = intersect(i.osPosition, normalize(i.osDirection));
     if (length(surfacePosition) > 0) {
         float3 pixelColor = shadeSurface(surfacePosition);
         return fixed4(pixelColor, 1.0);
     }
 
-    return col;
+    return fixed4(0, 0, 0, 0);
 }
 ENDCG
-	  }
-  }
-
-  Fallback off
+		}
+	}
 }
