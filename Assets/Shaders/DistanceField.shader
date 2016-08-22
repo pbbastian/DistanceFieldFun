@@ -86,7 +86,7 @@ float world(float3 p)
 {
     //p.x = (abs(p.x) % 3) - 1.5;
     //return sphere(p, 0, 1);
-    return min(cube(p, 0, 0.3), sphere(p, 0.3, 0.15));
+    return min(cube(p, 0, 0.3), sphere(p, float3(0.3, 0.3*_SinTime.w, 0), 0.15));
     //return cube(p, 0, 1);
 }
 
