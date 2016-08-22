@@ -75,6 +75,7 @@ float world(float3 p)
 #define AO_SCALE 10
 #define AO_ITERATIONS 5
 #define SHADOW_OFFSET 0.1
+#define SHADOW_ITERATIONS 5
 #define ITERATIONS 50
 
 float3 computeNormal(float3 p)
@@ -90,23 +91,20 @@ float3 computeNormal(float3 p)
     ));
 }
 
-float marchShadow(float3 p, float3 lightDirection)
+float shadow(float3 p, float3 lightDirection)
 {
     p += SHADOW_OFFSET * lightDirection;
-    float previousDistance = 10000;
-    for (int i = 0; i < 10; i++) {
+    for (int i = 0; i < SHADOW_ITERATIONS; i++) {
         float distance = world(p);
         if (distance < EPS) {
             return 0;
-        } else if (distance > previousDistance) {
-            return 1;
         }
-        previousDistance = distance;
+        p += distance*lightDirection;
     }
     return 1;
 }
 
-float marchAO(float3 p, float3 normal)
+float ao(float3 p, float3 normal)
 {
     float occlusion = 0;
     for (int i = 1; i <= AO_ITERATIONS; ++i) {
@@ -131,11 +129,9 @@ float3 shadeSurface(float3 p)
     float3 halfVec = (lightDirection - viewDirection) / 2;
     float specular = pow(dot(normal, halfVec), _SpecularPower) * _Gloss;
 
-    float shadow = marchShadow(p, lightDirection);
+    float3 ambient = unity_AmbientSky * ao(p, normal);
 
-    float3 ambient = unity_AmbientSky * marchAO(p, normal);
-
-    return shadow * (NdotL * _Color.xyz * lightColor + specular) + ambient;
+    return shadow(p, lightDirection) * (NdotL * _Color.xyz * lightColor + specular) + ambient;
 }
 
 fixed4 intersect(float3 p, float3 dir)
