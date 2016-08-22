@@ -74,7 +74,8 @@ float world(float3 p)
 #define AO_STEP 0.01
 #define AO_SCALE 10
 #define AO_ITERATIONS 5
-#define SHADOW_OFFSET 0.1
+#define SHADOW_MIN_T 0.1
+#define SHADOW_MAX_T 1
 #define SHADOW_ITERATIONS 5
 #define ITERATIONS 50
 
@@ -93,15 +94,28 @@ float3 computeNormal(float3 p)
 
 float shadow(float3 p, float3 lightDirection)
 {
-    p += SHADOW_OFFSET * lightDirection;
-    for (int i = 0; i < SHADOW_ITERATIONS; i++) {
-        float distance = world(p);
+    for (float t = SHADOW_MIN_T; t < SHADOW_MAX_T;) {
+        float distance = world(p + lightDirection * t);
         if (distance < EPS) {
             return 0;
         }
-        p += distance*lightDirection;
+        t += distance;
     }
     return 1;
+}
+
+float softshadow(float3 p, float3 lightDirection, float k = 32)
+{
+    float result = 1;
+    for (float t = SHADOW_MIN_T; t < SHADOW_MAX_T;) {
+        float distance = world(p + lightDirection * t);
+        if (distance < EPS) {
+            return 0;
+        }
+        result = min(result, k*distance/t);
+        t += distance;
+    }
+    return result;
 }
 
 float ao(float3 p, float3 normal)
@@ -131,7 +145,9 @@ float3 shadeSurface(float3 p)
 
     float3 ambient = unity_AmbientSky * ao(p, normal);
 
-    return shadow(p, lightDirection) * (NdotL * _Color.xyz * lightColor + specular) + ambient;
+    return softshadow(p, lightDirection, 16)
+            * (NdotL * _Color.xyz * lightColor + specular)
+         + ambient;
 }
 
 fixed4 intersect(float3 p, float3 dir)
