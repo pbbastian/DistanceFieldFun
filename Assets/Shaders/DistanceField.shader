@@ -1,8 +1,4 @@
-﻿// Upgrade NOTE: replaced '_World2Object' with 'unity_WorldToObject'
-
-// Upgrade NOTE: replaced '_World2Object' with 'unity_WorldToObject'
-
-Shader "Unlit/DistanceField"
+﻿Shader "Unlit/DistanceField"
 {
 	Properties
 	{
@@ -31,6 +27,7 @@ CGPROGRAM
 
 #include "UnityCG.cginc"
 #include "Lighting.cginc"
+#include "SDF.cginc"
 
 struct appdata
 {
@@ -64,36 +61,18 @@ v2f vert (appdata v)
     return o;
 }
 
-float cube(float3 p, float3 o, float3 s)
-{
-    float3 d = abs(o - p) - s;
-    return min(max(d.x, max(d.y,d.z)), 0.0)
-            + length(max(d, 0.0));
-}
-
-float sphere(float3 p, float3 o, float3 s)
-{
-    return length(o - p) - s;
-}
-
-float sdf_smin(float a, float b, float k = 32)
-{
-	float res = exp(-k*a) + exp(-k*b);
-	return -log(max(0.0001,res)) / k;
-}
-
 float world(float3 p)
 {
     //p.x = (abs(p.x) % 3) - 1.5;
     //return sphere(p, 0, 1);
-    return min(cube(p, 0, 0.3), sphere(p, float3(0.3, 0.3*_SinTime.w, 0), 0.15));
+    return min(sdf_cube(p, 0, 0.2), sdf_sphere(p, float3(0.2, 0.2*_SinTime.w, 0.2*_CosTime.w), 0.15));
     //return cube(p, 0, 1);
 }
 
 #define EPS 0.001
-#define NORMAL_EPS 0.000001
-#define AO_STEP 0.1
-#define AO_SCALE 1
+#define NORMAL_EPS 0.001
+#define AO_STEP 0.01
+#define AO_SCALE 10
 #define AO_ITERATIONS 5
 #define SHADOW_OFFSET 0.1
 #define ITERATIONS 50
