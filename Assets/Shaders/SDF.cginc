@@ -5,6 +5,14 @@ float sdf_cube(float3 p, float3 o, float3 s)
             + length(max(d, 0.0));
 }
 
+float sdf_pillar(float3 p, float3 o, float3 s)
+{
+    p.y = 0;
+    float3 d = abs(o - p) - s;
+    return min(max(d.x, d.z), 0.0)
+            + length(max(d, 0.0));
+}
+
 float sdf_sphere(float3 p, float3 o, float3 s)
 {
     return length(o - p) - s;

@@ -65,8 +65,22 @@ float world(float3 p)
 {
     //p.x = (abs(p.x) % 3) - 1.5;
     //return sphere(p, 0, 1);
-    return min(sdf_cube(p, 0, 0.2), sdf_sphere(p, float3(0.2, 0.2*_SinTime.w, 0.2*_CosTime.w), 0.15));
-    //return cube(p, 0, 1);
+    //return min(sdf_cube(p, 0, 0.2), sdf_sphere(p, float3(0.2, 0.2*_SinTime.w, 0.2*_CosTime.w), 0.15));
+    // return sdf_pillar(p, 0, 0.1);
+
+    // Attempt at an infinite, twisting pillar.
+    // Shouldn't use a repeated cube, as that leaves artifacts.
+    float theta = p.y * 3.14 * 2 * _SinTime.w;
+    float3x3 rotY = float3x3(
+        cos(theta), 0, sin(theta),
+        0, 1, 0,
+        -sin(theta), 0, cos(theta)
+    );
+    float3 q = mul(rotY, p);
+    return min(
+        sdf_pillar(q, float3(0.08, 0, 0), 0.05),
+        sdf_pillar(q, float3(0, 0, 0.08), 0.05)
+    );
 }
 
 #define EPS 0.001
@@ -165,10 +179,12 @@ fixed4 intersect(float3 p, float3 dir)
 
 fixed4 frag (v2f i) : SV_Target
 {
+    fixed4 col = intersect(i.osPosition, normalize(i.osDirection));
+
     // apply fog
     UNITY_APPLY_FOG(i.fogCoord, col);
 
-    return intersect(i.osPosition, normalize(i.osDirection));
+    return col;
 }
 ENDCG
 		}
